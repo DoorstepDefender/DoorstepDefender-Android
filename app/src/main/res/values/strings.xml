@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Doorstep Defender</string>
+    <string name="action_settings">Settings</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="doorstep_defender_fragment_label">Main Fragment</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+
+    <string name="doorstep_defender_fragment">Doorstep Defender</string>
+</resources>
