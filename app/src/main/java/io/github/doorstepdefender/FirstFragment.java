@@ -1,9 +1,7 @@
 package io.github.doorstepdefender;
 
-import android.graphics.Color;
+import android.annotation.SuppressLint;
 import android.os.Bundle;
-import android.util.Log;
-import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,6 +10,7 @@ import com.google.android.material.textfield.TextInputLayout;
 
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
@@ -20,6 +19,7 @@ public class FirstFragment extends Fragment {
     public Button updateButton;
     public EditText editText;
     public ImageView imageView;
+    public TextView textView;
 
     private String lastUpdateName = null;
 
@@ -33,6 +33,12 @@ public class FirstFragment extends Fragment {
         updateButton = (Button)view.findViewById(R.id.button);
         editText = ((TextInputLayout)view.findViewById(R.id.textInputLayout)).getEditText();
         imageView = (ImageView)view.findViewById(R.id.imageView);
+        textView = (TextView)view.findViewById(R.id.textView);
+
+        lastUpdateName = BluetoothService.getDeviceName();
+        if (lastUpdateName != null) {
+            editText.setText(lastUpdateName);
+        }
 
         updateButton.setOnClickListener(v -> {
             lastUpdateName = editText.getText().toString();
@@ -62,6 +68,7 @@ public class FirstFragment extends Fragment {
         });
 
         imageView.postDelayed(new Runnable() {
+            @SuppressLint("SetTextI18n")
             @Override
             public void run() {
                 // Update image based on Bluetooth Service status.
@@ -70,10 +77,16 @@ public class FirstFragment extends Fragment {
 
                 switch (status) {
                     case NOT_CONNECTED:
+                        imageView.setImageResource(R.drawable.not_connected);
+                        textView.setText("Not Connected");
                         break;
                     case PRESENT:
+                        imageView.setImageResource(R.drawable.yes_package);
+                        textView.setText("Package");
                         break;
                     case GONE:
+                        imageView.setImageResource(R.drawable.no_package);
+                        textView.setText("No Package");
                         break;
                 }
 

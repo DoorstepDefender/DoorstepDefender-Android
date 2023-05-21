@@ -15,7 +15,6 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
-import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -33,6 +32,8 @@ public class BluetoothService extends Service {
     private static PackageStatus status = PackageStatus.NOT_CONNECTED;
     private static final Lock lock = new ReentrantLock(true);
 
+    private static boolean isRunning = false;
+
     public enum PackageStatus {
         NOT_CONNECTED,
         PRESENT,
@@ -47,7 +48,18 @@ public class BluetoothService extends Service {
     }
 
     @Override
+    public void onDestroy() {
+        super.onDestroy();
+        isRunning = false;
+    }
+
+    public static boolean getIsRunning() {
+        return isRunning;
+    }
+
+    @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        isRunning = true;
         startBluetoothThread();
         startForegroundService();
 
@@ -71,6 +83,13 @@ public class BluetoothService extends Service {
         lock.lock();
         deviceName = name.isEmpty() ? null : name;
         lock.unlock();
+    }
+
+    public static String getDeviceName() {
+        lock.lock();
+        String name = deviceName;
+        lock.unlock();
+        return name;
     }
 
     private void showNotification(String title, String message) {
