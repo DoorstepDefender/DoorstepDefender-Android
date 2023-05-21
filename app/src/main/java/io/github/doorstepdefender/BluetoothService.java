@@ -10,49 +10,46 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Message;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
+import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.UUID;
 
 public class BluetoothService extends Service {
     private static final String TAG = "BluetoothService";
     private static final String CHANNEL_ID = "BluetoothServiceChannel";
 
-    private BluetoothAdapter bluetoothAdapter;
-    private BluetoothDevice bluetoothDevice;
-    private BluetoothSocket bluetoothSocket;
-    private InputStream inputStream;
     private NotificationManager notificationManager;
+    private static Thread thread;
+    private static String deviceName = null;
+    private static PackageStatus status = PackageStatus.NOT_CONNECTED;
+    private static final Lock lock = new ReentrantLock(true);
+
+    public enum PackageStatus {
+        NOT_CONNECTED,
+        PRESENT,
+        GONE,
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
-
-        bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        if (bluetoothAdapter == null) {
-            Log.e(TAG, "Problem getting device's Bluetooth Adapter");
-        }
 
         notificationManager = getSystemService(NotificationManager.class);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (bluetoothAdapter.isEnabled()) {
-            startBluetoothThread();
-            startForegroundService();
-        }
-        else {
-            Log.e(TAG, "Bluetooth is not enabled");
-        }
-
+        startBluetoothThread();
+        startForegroundService();
 
         return super.onStartCommand(intent, flags, startId);
     }
@@ -63,12 +60,25 @@ public class BluetoothService extends Service {
         return null;
     }
 
+    public static PackageStatus getPackageStatus() {
+        lock.lock();
+        PackageStatus s = status;
+        lock.unlock();
+        return s;
+    }
+
+    public static void setDeviceName(String name) {
+        lock.lock();
+        deviceName = name.isEmpty() ? null : name;
+        lock.unlock();
+    }
+
     private void showNotification(String title, String message) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "Bluetooth Service",
-                    NotificationManager.IMPORTANCE_DEFAULT
+                    NotificationManager.IMPORTANCE_HIGH
             );
             notificationManager.createNotificationChannel(channel);
         }
@@ -86,7 +96,7 @@ public class BluetoothService extends Service {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_ID,
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_HIGH
         );
 
         getSystemService(NotificationManager.class).createNotificationChannel(channel);
@@ -100,15 +110,154 @@ public class BluetoothService extends Service {
     }
 
     private void startBluetoothThread() {
-        new Thread(() -> {
+        thread = new Thread(() -> {
+            BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+            if (bluetoothAdapter == null) {
+                Log.e(TAG, "Problem getting device's Bluetooth Adapter");
+            }
+            if (!bluetoothAdapter.isEnabled()) {
+                Log.e(TAG, "Bluetooth is not enabled");
+                return;
+            }
+
+            BluetoothSocket socket = null;
+            BluetoothDevice targetDevice = null;
+            InputStream inputStream = null;
+
+            String lastName = null;
             while (true) {
                 Log.e("Service", "Service is running...");
                 try {
+                    String name = lastName;
+                    lock.lock();
+                    name = deviceName;
+                    lock.unlock();
+
+                    if (name == null) {
+                        Thread.sleep(100);
+                        continue;
+                    }
+
+                    if (!name.equals(lastName) || targetDevice == null) {
+                        lastName = name;
+                        if (socket != null) {
+                            if (socket.isConnected()) {
+                                try {
+                                    socket.close();
+                                }
+                                catch (IOException e) {
+                                    Log.e(TAG, "Failed to close socket: " + e.getMessage());
+                                }
+                            }
+                        }
+                        if (inputStream != null) {
+                            try {
+                                inputStream.close();
+                            }
+                            catch (IOException e) {
+                                Log.e(TAG, "Failed to close input stream: " + e.getMessage());
+                            }
+                        }
+                        socket = null;
+                        targetDevice = null;
+                        inputStream = null;
+                        lock.lock();
+                        status = PackageStatus.NOT_CONNECTED;
+                        lock.unlock();
+
+                        for (BluetoothDevice device : bluetoothAdapter.getBondedDevices()) {
+                            Log.e(TAG, "Found: " + device.getName());
+                            if (device.getName().equals(name) || device.getAddress().equals(name)) {
+                                targetDevice = bluetoothAdapter.getRemoteDevice(device.getAddress());
+                                Log.e(TAG, "Found Bluetooth device '" + name + "' address: '" + device.getAddress() + "'");
+                                break;
+                            }
+                        }
+                    }
+
+                    if (targetDevice == null) {
+                        Log.e(TAG, "Bluetooth device '" + name + "' not found");
+                        Thread.sleep(100);
+                        continue;
+                    }
+
+
+                    if (socket == null) {
+                        try {
+                            socket =(BluetoothSocket) targetDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(targetDevice,1);
+                        }
+                        catch (NoSuchMethodException|InvocationTargetException|IllegalAccessException e) {
+                            Log.e(TAG, "Failed to create RFCOMM socket: " + e.getMessage());
+                            Thread.sleep(100);
+                            continue;
+                        }
+                    }
+
+                    if (!socket.isConnected()) {
+                        // Connect to the device
+                        try {
+                            socket.connect();
+                            Log.i(TAG, "Bluetooth device connected successfully");
+                        }
+                        catch (IOException e) {
+                            Log.e(TAG, "Failed to connect to Bluetooth device: " + e.getMessage());
+                            try {
+                                socket.close();
+                            } catch (IOException ex) {
+                                Log.e(TAG, "Failed to close socket: " + ex.getMessage());
+                            }
+                            socket = null;
+                            Thread.sleep(100);
+                            continue;
+                        }
+                    }
+
+                    if (inputStream == null) {
+                        try {
+                            inputStream = socket.getInputStream();
+                        }
+                        catch (IOException e) {
+                            Log.e(TAG, "Failed to get Input Stream from Bluetooth device: " + e.getMessage());
+                            Thread.sleep(100);
+                            inputStream = null;
+                            continue;
+                        }
+                    }
+
+                    try {
+                        byte[] buffer = new byte[1024];
+                        int bytes = inputStream.read(buffer);
+                        if (bytes > 0) {
+                            String message = new String(buffer, 0, bytes);
+                            for (char c : message.toCharArray()) {
+                                if (c == 'd') {
+                                    showNotification("Package Delivered", "Package has been placed on sensor");
+                                    Log.e(TAG, "Package Delivered");
+                                    lock.lock();
+                                    status = PackageStatus.PRESENT;
+                                    lock.unlock();
+                                }
+                                else if (c == 'g') {
+                                    showNotification("Package Removed", "Package has been removed from sensor");
+                                    Log.e(TAG, "Package Removed");
+                                    lock.lock();
+                                    status = PackageStatus.GONE;
+                                    lock.unlock();
+                                }
+                            }
+                        }
+                    } catch (IOException e) {
+                        Log.e(TAG, "Error reading/writing Bluetooth message: " + e.getMessage());
+                        targetDevice = null;
+                    }
+
                     Thread.sleep(2000);
-                } catch (InterruptedException e) {
+                }
+                catch (InterruptedException e) {
                     e.printStackTrace();
                 }
             }
-        }).start();
+        });
+        thread.start();
     }
 }
