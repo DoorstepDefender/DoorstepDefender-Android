@@ -8,6 +8,8 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import com.google.android.material.textfield.TextInputLayout;
 
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -20,6 +22,7 @@ public class FirstFragment extends Fragment {
     public EditText editText;
     public ImageView imageView;
     public TextView textView;
+    public CheckBox checkBox;
 
     private String lastUpdateName = null;
 
@@ -34,6 +37,7 @@ public class FirstFragment extends Fragment {
         editText = ((TextInputLayout)view.findViewById(R.id.textInputLayout)).getEditText();
         imageView = (ImageView)view.findViewById(R.id.imageView);
         textView = (TextView)view.findViewById(R.id.textView);
+        checkBox = (CheckBox)view.findViewById(R.id.checkBox);
 
         lastUpdateName = BluetoothService.getDeviceName();
         if (lastUpdateName != null) {
@@ -67,13 +71,16 @@ public class FirstFragment extends Fragment {
             return false;
         });
 
+        checkBox.setOnCheckedChangeListener((compoundButton, b) -> {
+            BluetoothService.setAlarmEnabled(b);
+        });
+
         imageView.postDelayed(new Runnable() {
             @SuppressLint("SetTextI18n")
             @Override
             public void run() {
                 // Update image based on Bluetooth Service status.
                 BluetoothService.PackageStatus status = BluetoothService.getPackageStatus();
-
 
                 switch (status) {
                     case NOT_CONNECTED:

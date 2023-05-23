@@ -30,6 +30,7 @@ public class BluetoothService extends Service {
     private static Thread thread;
     private static String deviceName = null;
     private static PackageStatus status = PackageStatus.NOT_CONNECTED;
+    private static boolean alarmEnabled = false;
     private static final Lock lock = new ReentrantLock(true);
 
     private static boolean isRunning = false;
@@ -83,6 +84,19 @@ public class BluetoothService extends Service {
         lock.lock();
         deviceName = name.isEmpty() ? null : name;
         lock.unlock();
+    }
+
+    public static void setAlarmEnabled(boolean enabled) {
+        lock.lock();
+        alarmEnabled = enabled;
+        lock.unlock();
+    }
+
+    public static boolean getAlarmEnabled() {
+        lock.lock();
+        boolean enabled = alarmEnabled;
+        lock.unlock();
+        return enabled;
     }
 
     public static String getDeviceName() {
